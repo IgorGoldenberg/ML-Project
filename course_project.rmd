@@ -1,0 +1,86 @@
+---
+title: "ML Project"
+author: "Igor Goldenberg"
+date: "27 December 2015"
+output: html_document
+---
+
+## 1. Read the data  
+```{r cache=TRUE}
+originalSet<-read.csv("pml-training.csv")
+validationSet<-read.csv("pml-testing.csv")
+```
+
+## 2. Explore and clean the data  
+  We can see that quite a few column contain a lot of empty or NA cells. First we need to see how many non-empty cells in each column
+```{r}
+colSize<-function(x)
+{
+	sum(x=="" | is.na(x))
+}
+missingValues<-sapply(originalSet, colSize)
+table(missingValues)
+```
+60 columns have no missing values and 100 columns have 19216 missing values (out of 19622). Those 100 columns should be excluded.
+Further to that, first six columns make no sense as predictors. Order number, name, timestamps (3 columns) and new_window make no sense as predictors.
+
+We should also replace factors with numbers
+
+```{r}
+varUsed<-names(missingValues)[7]
+for (i in 8:159)
+{
+	if (missingValues[i]<19000)
+	{
+		originalSet[,i]<-as.numeric(originalSet[,i])
+		varUsed<-c(varUsed, names(missingValues)[i])
+	}
+}
+validationSet<-validationSet[,varUsed]
+varUsed<-c(varUsed,"classe")
+originalSet<-originalSet[,varUsed]
+```
+
+## 3. Split data into training and testing set
+```{r}
+library(caret, quietly = TRUE)
+set.seed(3131)
+inTrain<-createDataPartition(originalSet$classe, p=0.6, list = FALSE)
+training<-originalSet[inTrain,]
+testing<-originalSet[-inTrain,]
+library(randomForest, quietly = TRUE)
+library(doParallel)
+```
+
+## 4. attempt to use decision tree
+```{r}
+modTree<-train(classe~.,data = training, method="rpart")
+predTRee<-predict(modTree, newdata = testing)
+table(predTRee, testing$classe)
+
+```
+The fit for testing data is terrible.
+
+## 5. Random forest
+While using train function from caret is ideal, it turned out to be very slow on my computer (even with possible optimisation and multi-core). I decided to use randomForect directly and it worked quite well
+
+```{r}
+modRF<-randomForest(formula=classe~., data = training)
+print(modRF)
+```
+
+#### Validate accuracy on the testing set
+```{r}
+predRF=predict(modRF, newdata = testing)
+print(table(predRF, testing$classe))
+```
+
+## 6. Application of the model
+```{r}
+answers<-predict(modRF, newdata = validationSet)
+print(answers)
+```
+
+## 7. Conclusion
+Random forest has 99.69% out of sample accuracy.
+applying to the test set gives even better accuracy
